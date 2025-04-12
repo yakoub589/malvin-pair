@@ -1,6 +1,11 @@
 import * as mega from 'megajs';
 import fs from 'fs';
 import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Resolve __dirname for ES Modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Path to store session info
 const sessionFilePath = path.join(__dirname, 'session');
