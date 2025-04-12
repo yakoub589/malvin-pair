@@ -17,6 +17,16 @@ const auth = {
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246'
 };
 
+// Function to encode session as base64
+const encodeSessionToBase64 = (session) => {
+    return Buffer.from(session).toString('base64');
+};
+
+// Function to decode session from base64
+const decodeSessionFromBase64 = (encodedSession) => {
+    return Buffer.from(encodedSession, 'base64').toString('utf-8');
+};
+
 // Load or create Mega session
 const getMegaStorage = () => {
     return new Promise((resolve, reject) => {
@@ -24,7 +34,8 @@ const getMegaStorage = () => {
 
         // Try to reuse session
         if (fs.existsSync(sessionFilePath)) {
-            const session = fs.readFileSync(sessionFilePath, 'utf-8');
+            const encodedSession = fs.readFileSync(sessionFilePath, 'utf-8');
+            const session = decodeSessionFromBase64(encodedSession);
             storage = mega.Storage.fromSession(session, err => {
                 if (err) return reject(`Session reuse failed: ${err}`);
                 resolve(storage);
@@ -33,7 +44,8 @@ const getMegaStorage = () => {
             // Login fresh and save session
             storage = new mega.Storage(auth, () => {
                 const session = storage.toSession();
-                fs.writeFileSync(sessionFilePath, session);
+                const encodedSession = encodeSessionToBase64(session);
+                fs.writeFileSync(sessionFilePath, encodedSession);
                 resolve(storage);
             });
 
