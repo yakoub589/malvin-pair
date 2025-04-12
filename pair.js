@@ -6,102 +6,87 @@ import { upload } from './mega.js';
 
 const router = express.Router();
 
-// Ensure the session directory exists
-function removeFile(FilePath) {
-    try {
-        if (!fs.existsSync(FilePath)) return false;
-        fs.rmSync(FilePath, { recursive: true, force: true });
-    } catch (e) {
-        console.error('Error removing file:', e);
-    }
+function removeFile(filePath) {
+    try {
+        if (fs.existsSync(filePath)) {
+            fs.rmSync(filePath, { recursive: true, force: true });
+        }
+    } catch (e) {
+        console.error('Error removing file:', e);
+    }
 }
 
 router.get('/', async (req, res) => {
-    let num = req.query.number;
-    let dirs = './' + (num || `session`);
-    
-    // Remove existing session if present
-    await removeFile(dirs);
-    
-    async function initiateSession() {
-        const { state, saveCreds } = await useMultiFileAuthState(dirs);
+    let num = req.query.number;
+    const sessionDir = './' + (num || 'session');
+    removeFile(sessionDir);
 
-        try {
-            let MalvinTechInc = makeWASocket({
-                auth: {
-                    creds: state.creds,
-                    keys: makeCacheableSignalKeyStore(state.keys, pino({ level: "fatal" }).child({ level: "fatal" })),
-                },
-                printQRInTerminal: false,
-                logger: pino({ level: "fatal" }).child({ level: "fatal" }),
-                browser: ["Ubuntu", "Chrome", "20.0.04"],
-            });
+    const initiateSession = async () => {
+        const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
 
-            if (!MalvinTechInc.authState.creds.registered) {
-                await delay(2000);
-                num = num.replace(/[^0-9]/g, '');
-                const code = await MalvinTechInc.requestPairingCode(num);
-                if (!res.headersSent) {
-                    console.log({ num, code });
-                    await res.send({ code });
-                }
-            }
+        try {
+            const client = makeWASocket({
+                auth: {
+                    creds: state.creds,
+                    keys: makeCacheableSignalKeyStore(state.keys, pino({ level: 'fatal' }))
+                },
+                printQRInTerminal: false,
+                logger: pino({ level: 'fatal' }),
+                browser: Browsers.ubuntu()
+            });
 
-            MalvinTechInc.ev.on('creds.update', saveCreds);
-            MalvinTechInc.ev.on("connection.update", async (s) => {
-                const { connection, lastDisconnect } = s;
+            if (!client.authState.creds.registered) {
+                await delay(2000);
+                num = num.replace(/\D/g, '');
+                const code = await client.requestPairingCode(num);
+                if (!res.headersSent) res.send({ code });
+            }
 
-                if (connection === "open") {
-                    await delay(10000);
-                    const sessionGlobal = fs.readFileSync(dirs + '/creds.json');
+            client.ev.on('creds.update', saveCreds);
 
-                    // Helper to generate a random Mega file ID
-                    function generateRandomId(length = 6, numberLength = 4) {
-                        const characters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-                        let result = '';
-                        for (let i = 0; i < length; i++) {
-                            result += characters.charAt(Math.floor(Math.random() * characters.length));
-                        }
-                        const number = Math.floor(Math.random() * Math.pow(10, numberLength));
-                        return `${result}${number}`;
-                    }
+            client.ev.on('connection.update', async ({ connection, lastDisconnect }) => {
+                if (connection === 'open') {
+                    try {
+                        await delay(10000);
+                        const credsPath = `${sessionDir}/creds.json`;
+                        const sessionStream = fs.createReadStream(credsPath);
 
-                    // Upload session file to Mega
-                    const megaUrl = await upload(fs.createReadStream(`${dirs}/creds.json`), `${generateRandomId()}.json`);
-                    let stringSession = megaUrl.replace('https://mega.nz/file/', ''); // Extract session ID from URL
-                    stringSession = 'MALVIN~' + stringSession;  // Prepend your name to the session ID
+                        const randomId = () => {
+                            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+                            const rand = [...Array(6)].map(() => chars[Math.floor(Math.random() * chars.length)]).join('');
+                            return `${rand}${Math.floor(Math.random() * 10000)}`;
+                        };
 
-                    // Send the session ID to the target number
-                    const userJid = jidNormalizedUser(num + '@s.whatsapp.net');
-                    await MalvinTechInc.sendMessage(userJid, { text: stringSession });
+                        const megaUrl = await upload(sessionStream, `${randomId()}.json`);
+                        const sessionId = `MALVIN~${megaUrl.replace('https://mega.nz/file/', '')}`;
+                        const userJid = jidNormalizedUser(num + '@s.whatsapp.net');
 
-                    // Send confirmation message
-                    await MalvinTechInc.sendMessage(userJid, { text: 'Hello MALVIN-XD User! 👋🏻*\n\n> Do not share your session ID with anyone.\n\n*Thanks for using MALVIN-XD 🚩*\n\n> Join WhatsApp Channel: ⤵️\nhttps://whatsapp.com/channel/0029VbA6MSYJUM2TVOzCSb2A\n\nFork the repo ⬇️\nhttps://github.com/XdKing2/MALVIN-XD\n\n> *© Powered BY Malvin King*'});
-                    
-                    // Clean up session after use
-                    await delay(100);
-                    removeFile(dirs);
-                    process.exit(0);
-                } else if (connection === 'close' && lastDisconnect && lastDisconnect.error && lastDisconnect.error.output.statusCode !== 401) {
-                    console.log('Connection closed unexpectedly:', lastDisconnect.error);
-                    await delay(10000);
-                    initiateSession(); // Retry session initiation if needed
-                }
-            });
-        } catch (err) {
-            console.error('Error initializing session:', err);
-            if (!res.headersSent) {
-                res.status(503).send({ code: 'Service Unavailable' });
-            }
-        }
-    }
+                        await client.sendMessage(userJid, { text: sessionId });
+                        await client.sendMessage(userJid, { text: 'Hello MALVIN-XD User! 👋🏻*\n\n> Do not share your session ID with anyone.\n\n*Thanks for using MALVIN-XD 🚩*\n\n> Join WhatsApp Channel: ⤵️\nhttps://whatsapp.com/channel/0029VbA6MSYJUM2TVOzCSb2A\n\nFork the repo ⬇️\nhttps://github.com/XdKing2/MALVIN-XD\n\n> *© Powered BY Malvin King*' });
 
-    await initiateSession();
+                        removeFile(sessionDir);
+                        res.status(200).send({ status: 'Session complete and uploaded.' });
+                    } catch (err) {
+                        console.error('Failed during connection open:', err);
+                        if (!res.headersSent) res.status(500).send({ error: 'Failed during session handling.' });
+                    }
+                } else if (connection === 'close' && lastDisconnect?.error?.output?.statusCode !== 401) {
+                    console.warn('Connection closed, retrying...');
+                    await delay(10000);
+                    initiateSession();
+                }
+            });
+        } catch (err) {
+            console.error('Session init error:', err);
+            if (!res.headersSent) res.status(503).send({ code: 'Service Unavailable' });
+        }
+    };
+
+    await initiateSession();
 });
 
-// Global uncaught exception handler
-process.on('uncaughtException', (err) => {
-    console.log('Caught exception: ' + err);
+process.on('uncaughtException', err => {
+    console.error('Caught exception:', err);
 });
 
 export default router;
