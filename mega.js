@@ -1,73 +1,72 @@
 import * as mega from 'megajs';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
 
-// Resolve __dirname for ES Modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-
-// Path to store session info
-const sessionFilePath = path.join(__dirname, 'session');
-
-// Mega authentication credentials (use with caution in real apps)
+// Mega authentication credentials
 const auth = {
-    email: 'malvink003@gmail.com',
-    password: 'malvin266',
+    email: 'malvink003@gmail.com', // Replace with your Mega email
+    password: 'malvin266', // Replace with your Mega password
     userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246'
 };
 
-// Function to encode session as base64
-const encodeSessionToBase64 = (session) => {
-    return Buffer.from(session).toString('base64');
-};
-
-// Function to decode session from base64
-const decodeSessionFromBase64 = (encodedSession) => {
-    return Buffer.from(encodedSession, 'base64').toString('utf-8');
-};
-
-// Load or create Mega session
-const getMegaStorage = () => {
+// Function to upload a file to Mega and return the URL
+export const upload = (data, name) => {
     return new Promise((resolve, reject) => {
-        let storage;
+        try {
+            // Authenticate with Mega storage
+            const storage = new mega.Storage(auth, () => {
+                // Upload the data stream (e.g., file stream) to Mega
+                const uploadStream = storage.upload({ name: name, allowUploadBuffering: true });
 
-        // Try to reuse session
-        if (fs.existsSync(sessionFilePath)) {
-            const encodedSession = fs.readFileSync(sessionFilePath, 'utf-8');
-            const session = decodeSessionFromBase64(encodedSession);
-            storage = mega.Storage.fromSession(session, err => {
-                if (err) return reject(`Session reuse failed: ${err}`);
-                resolve(storage);
-            });
-        } else {
-            // Login fresh and save session
-            storage = new mega.Storage(auth, () => {
-                const session = storage.toSession();
-                const encodedSession = encodeSessionToBase64(session);
-                fs.writeFileSync(sessionFilePath, encodedSession);
-                resolve(storage);
-            });
+                // Pipe the data into Mega
+                data.pipe(uploadStream);
 
-            storage.on('error', err => {
-                reject(`Login failed: ${err}`);
+                // When the file is successfully uploaded, resolve with the file's URL
+                storage.on("add", (file) => {
+                    file.link((err, url) => {
+                        if (err) {
+                            reject(err); // Reject if there's an error getting the link
+                        } else {
+                            storage.close(); // Close the storage session once the file is uploaded
+                            resolve(url); // Return the file's link
+                        }
+                    });
+                });
+
+                // Handle errors during file upload process
+                storage.on("error", (error) => {
+                    reject(error);
+                });
             });
+        } catch (err) {
+            reject(err); // Reject if any error occurs during the upload process
         }
     });
 };
 
-// Upload a file to Mega
-export const upload = (data, name) => {
-    return getMegaStorage().then(storage => {
-        return new Promise((resolve, reject) => {
-            const uploadStream = storage.upload({ name, allowUploadBuffering: true });
-            data.pipe(uploadStream);
+// Function to download a file from Mega using a URL
+export const download = (url) => {
+    return new Promise((resolve, reject) => {
+        try {
+            // Get file from Mega using the URL
+            const file = mega.File.fromURL(url);
 
-            storage.on('add', file => {
-                resolve(file.link());
+            file.loadAttributes((err) => {
+                if (err) {
+                    reject(err);
+                    return;
+                }
+
+                // Download the file buffer
+                file.downloadBuffer((err, buffer) => {
+                    if (err) {
+                        reject(err);
+                    } else {
+                        resolve(buffer); // Return the file buffer
+                    }
+                });
             });
-
-            uploadStream.on('error', reject);
-        });
+        } catch (err) {
+            reject(err);
+        }
     });
 };
+
