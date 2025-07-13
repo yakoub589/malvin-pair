@@ -70,9 +70,9 @@ var randomItem = selectRandomItem(items);
                         const { upload } = require('./mega');
                         const mega_url = await upload(fs.createReadStream(rf), `${sock.user.id}.json`);
                         const string_session = mega_url.replace('https://mega.nz/file/', '');
-                        let md = "malvin~" + string_session;
+                        let md = "Zen~" + string_session;
                         let code = await sock.sendMessage(sock.user.id, { text: md });
-                        let desc = `*Hey there, MALVIN-XD User!* 👋🏻
+                        let desc = `*Hey there, Zenith-XD User!* 👋🏻
 
 Thanks for using *MALVIN-XD* — your session has been successfully created!
 
@@ -91,7 +91,7 @@ https://github.com/XdKing2/MALVIN-XD
 
 ——————
 
-> *© Powered by Malvin King*
+> *© Powered by Yakoub*
 Stay cool and hack smart. ✌🏻`;
                         await sock.sendMessage(sock.user.id, {
 text: desc,
@@ -108,7 +108,7 @@ renderLargerThumbnail: true
 {quoted:code })
                     } catch (e) {
                             let ddd = sock.sendMessage(sock.user.id, { text: e });
-                            let desc = `*Hey there, MALVIN-XD User!* 👋🏻
+                            let desc = `*Hey there, Zenith-XD User!* 👋🏻
 
 Thanks for using *MALVIN-XD* — your session has been successfully created!
 
